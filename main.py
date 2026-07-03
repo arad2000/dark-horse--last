@@ -37,7 +37,7 @@ except ImportError as e:
 
 # Import New DarkHorseEngine
 try:
-    from darkhorse_engine import DarkHorseEngine
+    from dark_horse_engine import DarkHorseEngine
 except ImportError as e:
     logger.error(f"DarkHorseEngine import error: {e}")
     DarkHorseEngine = None
