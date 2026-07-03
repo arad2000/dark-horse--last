@@ -116,7 +116,8 @@ class DarkHorseEngine:
         if isinstance(raw_codes, dict):
             major_set = set(raw_codes.keys())
         elif isinstance(raw_codes, list):
-            major_set = set(raw_codes)
+            major_set = # حالت لیستی
+            major_set = {c.strip().lower() for c in raw_codes}
         else:
             return 0.0, []
 
