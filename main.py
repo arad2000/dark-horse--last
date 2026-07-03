@@ -1,5 +1,5 @@
 """
-Dark Horse API v10.0 - Integrated with DarkHorseEngine v12.0
+Dark Horse API v10.1 - Integrated with DarkHorseEngine v12.0
 موتور کشف فردیت (جدید) + موتور سنجش (حفظ شده)
 """
 
