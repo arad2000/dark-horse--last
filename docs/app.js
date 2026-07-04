@@ -2,7 +2,7 @@
 // تغییرات: Manifesto جدید، Guide بازنویسی‌شده، CSS کامل، Feedback سرور، اعداد اصلاح‌شده
 
 const API_BASE = 'https://dark-horse-last.onrender.com';
-const DATA_BASE = 'https://raw.githubusercontent.com/arad2000/dark-horse-last/main/data/';
+const DATA_BASE = './data/';
 
 // ==================== GLOBAL STATE ====================
 const state = {
