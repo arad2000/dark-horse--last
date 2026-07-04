@@ -7,7 +7,7 @@
 //   • حفظ تمام قابلیت‌ها (Resume, Feedback, Retry, …)
 
 const API_BASE = 'https://dark-horse-last.onrender.com';
-const DATA_BASE = './data/';
+const DATA_BASE = 'https://raw.githubusercontent.com/arad2000/dark-horse-last/main/data/
 
 // ==================== GLOBAL STATE ====================
 const state = {
