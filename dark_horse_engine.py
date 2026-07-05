@@ -128,7 +128,9 @@ class DarkHorseEngine:
         if not matched:
             return 0.0, []
 
-        score = len(matched) / len(major_set)
+        denom_limit = major_data.get("m_score_denom_limit", len(major_set))
+        denom = min(len(major_set), denom_limit)
+        score = len(matched) / denom
 
         matched_details = []
         for code in user_motives:
