@@ -1,14 +1,12 @@
 """
-Dark Horse Engine v12.2 (Production-Ready, All Bugfixes Applied)
-موتور کشف فردیت - نسخه نهایی
+Dark Horse Engine v13.0 (Personalized Descriptions)
+موتور کشف فردیت – نسخه کامل با توضیح شخصی‌سازی‌شده
 
-رفع باگ‌های بحرانی:
-  1. S Score: تقسیم بر valid به‌جای 25
-  2. V Score: skip پاسخ‌های خالی
-  3. docstring _get_fit_level
-  4. بازگرداندن highlights برای S و V
-  5. مستندسازی prestige_level
-  6. امن‌سازی int(major_id)
+تغییرات v13:
+  + تحلیل سبک فکری و ارزش‌ها از پاسخ‌های کاربر (build_user_profile)
+  + تولید توصیف اختصاصی برای هر رشته (generate_major_description)
+  + ذخیره‌سازی personalized_description در خروجی
+  + هندلینگ پاسخ‌های خالی SJT / Conjoint
 """
 
 import json
@@ -101,7 +99,7 @@ class DarkHorseEngine:
         return min(1.0, score), matched_details
 
     # ============================================================
-    # S Score (باگ تقسیم بر 25 رفع شده)
+    # S Score
     # ============================================================
     def _compute_s_score(
         self, strategy_answers: List[int], strategy_weights: List[List[float]]
@@ -124,12 +122,11 @@ class DarkHorseEngine:
             if row[idx] > 0.7:
                 highlights.append(f"بُعد {i+1}: هم‌خوانی بالا")
 
-        # ✅ اصلاح: تقسیم بر valid به‌جای 25
         score = min(1.0, total_weight / valid) if valid > 0 else 0.0
         return score, highlights
 
     # ============================================================
-    # V Score (باگ پاسخ خالی رفع شده)
+    # V Score
     # ============================================================
     def _compute_v_score(
         self, value_choices: List[str], value_weights: Dict[str, float]
@@ -142,7 +139,6 @@ class DarkHorseEngine:
         highlights = []
 
         for v in value_choices:
-            # ✅ اصلاح: skip پاسخ خالی
             if not v or not v.strip():
                 continue
             weight = value_weights.get(v.strip(), 0.0)
@@ -186,16 +182,207 @@ class DarkHorseEngine:
         return evidence
 
     # ============================================================
+    # NEW: تحلیل شخصیت کاربر (پروفایل متنی)
+    # ============================================================
+    def _build_user_profile(self, strategy_answers: List[int],
+                            value_choices: List[str]) -> str:
+        """
+        ساخت یک توصیف روان از سبک فکری، یادگیری، محیط کاری ترجیحی
+        و ارزش‌های برجسته کاربر بر اساس پاسخ‌هایش.
+        """
+        # نگاشت trait_hint ها بر اساس سوالات (question number -> list of traits)
+        trait_map = {
+            1: ["تحلیلی", "تجربی", "مشورتی", "شهودی", "عمل‌گرا"],
+            2: ["ساختاریافته", "حسی", "مشورتی", "آزمایشی", "بیرونی"],
+            3: ["نقدگرا", "فرضیه‌ساز", "مشورتی", "صبور", "شهودی"],
+            4: ["ریشه‌یاب", "مشاهده‌گر", "مشورتی", "خلاق", "عمل‌گرا"],
+            5: ["مستندات‌محور", "بصری", "پروژه‌محور", "اجتماعی", "اکتشافی"],
+            6: ["شنیداری", "پیش‌خوان", "عملی", "گفتگویی", "بازنویس"],
+            7: ["آکادمیک", "بصری", "تدریسی", "تمثیلی", "فرمال"],
+            8: ["منطقی", "جایگزین", "سلسله‌مراتبی", "همدلانه", "جمعی"],
+            9: ["مداخله‌گر", "میانجی", "تسهیل‌گر", "ناظر", "دموکراتیک"],
+            10: ["مدیر", "ایده‌پرداز", "مجری", "هماهنگ‌کننده", "مستقل"],
+            11: ["ساختارساز", "ماجراجو", "الگویاب", "شفافیت‌خواه", "چابک"],
+            12: ["صبور", "شهودی", "سناریوساز", "مشورتی", "انعطاف‌پذیر"],
+            13: ["قانون‌یاب", "شبکه‌ساز", "مشاهده‌گر", "عمل‌گرا", "فرهنگ‌خوان"],
+            14: ["آرام", "بداهه‌پرداز", "همکاری‌طلب", "واکنش‌سریع", "قیاسی"],
+            15: ["قانون‌مدار", "هوشمند", "مذاکره‌گر", "اصلاح‌گر", "برون‌سپار"],
+            16: ["وابسته به ساختار", "شخصی‌ساز", "خلاق", "موقعیتی", "شهودی"],
+            17: ["پشتکار", "مذاکره‌گر", "اولویت‌بند", "همکاری‌طلب", "کیفیت‌محور"],
+            18: ["تطبیق‌پذیر", "فراتر از حد", "نظام‌گرا", "خودمختار", "یادگیرنده"],
+            19: ["تحلیلی", "تجربی", "مشورتی", "شهودی", "عمل‌گرا"],
+            20: ["اولویت‌بند", "همکاری‌طلب", "سرعت‌گرا", "مذاکره‌گر", "برنامه‌ریز"],
+            21: ["خودمختار", "دستورپذیر", "نیمه‌مستقل", "تیمی", "موقعیتی"],
+            22: ["آزمایشگاه", "بیمارستان", "طبیعت", "کارگاه", "دفتر"],
+            23: ["سکوت-تنهایی", "پس‌زمینه", "فضای باز", "تعاملی", "خانگی"],
+            24: ["تعامل اجتماعی", "تنهایی", "فیزیکی", "ساخت‌وکار", "چالش فکری"],
+            25: ["فرایندگرا", "نتیجه‌گرا-تأثیر", "پیشرفت‌گرا", "چالش‌گرا", "رشدگرا"]
+        }
+
+        # شمارش trait ها
+        trait_counts = {}
+        for i, ans in enumerate(strategy_answers):
+            q_num = i + 1
+            if q_num in trait_map and ans is not None and 0 <= ans < len(trait_map[q_num]):
+                trait = trait_map[q_num][ans]
+                trait_counts[trait] = trait_counts.get(trait, 0) + 1
+
+        sorted_traits = sorted(trait_counts.items(), key=lambda x: x[1], reverse=True)
+        top_traits = [t[0] for t in sorted_traits[:5]]
+
+        # تحلیل ارزش‌ها
+        value_poles = {
+            "Q1A": "انسان‌محور", "Q1B": "سیستم‌محور",
+            "Q2A": "میراث مادی", "Q2B": "میراث فکری",
+            "Q3A": "تنوع‌طلب", "Q3B": "عمیق‌گرا",
+            "Q4A": "مسئولیت فردی", "Q4B": "مسئولیت سیستمی",
+            "Q5A": "نظم‌گرا", "Q5B": "خلاق‌گرا",
+            "Q6A": "تعامل‌گرا", "Q6B": "تمرکزگرا",
+            "Q7A": "مخترع", "Q7B": "مربی",
+            "Q8A": "ساختارگرا", "Q8B": "آزادی‌خواه",
+            "Q9A": "خدمت‌گرا", "Q9B": "خالق",
+            "Q10A": "رهبر", "Q10B": "وفاق‌ساز",
+            "Q11A": "داده‌گرا", "Q11B": "انسان‌گرا",
+            "Q12A": "خطرپذیر", "Q12B": "ثبات‌گرا",
+            "Q13A": "نتیجه‌گرا", "Q13B": "اثرگرا",
+            "Q14A": "استقلال‌طلب", "Q14B": "تعلق‌گرا",
+            "Q15A": "تسلط‌گرا", "Q15B": "کنجکاوی‌گرا"
+        }
+
+        pole_counts = {}
+        for v in value_choices:
+            if v in value_poles:
+                pole = value_poles[v]
+                pole_counts[pole] = pole_counts.get(pole, 0) + 1
+
+        sorted_poles = sorted(pole_counts.items(), key=lambda x: x[1], reverse=True)
+        top_values = [p[0] for p in sorted_poles[:5]]
+
+        # ساخت متن پروفایل
+        profile_parts = []
+
+        # سبک حل مسئله
+        if "تحلیلی" in top_traits or "ساختاریافته" in top_traits:
+            profile_parts.append("مسائل را با تحلیل گام‌به‌گام و ساختارمند حل می‌کنی.")
+        elif "تجربی" in top_traits or "پروژه‌محور" in top_traits:
+            profile_parts.append("با آزمون و خطا و درگیر شدن مستقیم با پروژه‌ها مسائل را حل می‌کنی.")
+        elif "شهودی" in top_traits:
+            profile_parts.append("اغلب جرقه‌های ناگهانی و شهود، راه‌حل‌هایت را شکل می‌دهند.")
+        elif "اجتماعی" in top_traits or "مشورتی" in top_traits:
+            profile_parts.append("از همفکری و گفتگو با دیگران برای رسیدن به پاسخ انرژی می‌گیری.")
+        else:
+            profile_parts.append("سبکی منعطف و چندوجهی در حل مسائل داری.")
+
+        # سبک یادگیری
+        if "مستندات‌محور" in top_traits or "آکادمیک" in top_traits:
+            profile_parts.append("یادگیری‌ات از طریق مطالعهٔ عمیق و منابع مکتوب شکل می‌گیرد.")
+        elif "بصری" in top_traits or "پروژه‌محور" in top_traits:
+            profile_parts.append("با دیدن و انجام دادن بهتر یاد می‌گیری.")
+        elif "شنیداری" in top_traits or "گفتگویی" in top_traits:
+            profile_parts.append("بحث و تبادل نظر، بهترین روش یادگیری توست.")
+        else:
+            profile_parts.append("روش یادگیری‌ات ترکیبی از چند سبک است.")
+
+        # محیط و انرژی
+        if "سکوت-تنهایی" in top_traits or "تنهایی" in top_traits:
+            profile_parts.append("در سکوت و تنهایی بیشترین بازده را داری و انرژی‌ات از تمرکز عمیق می‌آید.")
+        elif "تعامل اجتماعی" in top_traits or "تعاملی" in top_traits:
+            profile_parts.append("تعامل با دیگران به تو انرژی می‌دهد و در فضاهای شلوغ شکوفا می‌شوی.")
+        elif "کارگاه" in top_traits or "طبیعت" in top_traits:
+            profile_parts.append("ترجیح می‌دهی در محیط‌های عملی یا در دل طبیعت کار کنی.")
+        elif "دفتر" in top_traits:
+            profile_parts.append("فضاهای اداری مدرن و منظم برایت الهام‌بخش هستند.")
+        # otherwise keep it generic
+
+        # ارزش‌ها
+        if top_values:
+            profile_parts.append(f"ارزش‌های برجسته‌ات: {'، '.join(top_values[:3])}.")
+        else:
+            profile_parts.append("ارزش‌های عمیقت ترکیبی متعادل از اولویت‌های فردی و اجتماعی است.")
+
+        return " ".join(profile_parts)
+
+    # ============================================================
+    # NEW: تولید توضیح شخصی‌سازی‌شده برای یک رشته
+    # ============================================================
+    def _generate_major_description(
+        self, major_name: str, m_evidence: List[Dict],
+        s_score: float, v_score: float,
+        user_profile: str
+    ) -> str:
+        micro_count = len(m_evidence)
+        sample_items = [m.get("description", m["code"]) for m in m_evidence[:3]]
+        sample_str = "، ".join(sample_items) if sample_items else ""
+
+        desc_parts = []
+
+        if micro_count > 0:
+            if micro_count >= 10:
+                desc_parts.append(
+                    f"🔥 {micro_count} جرقهٔ تو مثل «{sample_str}» با {major_name} هم‌راستاست. "
+                    "انگار این مسیر سال‌ها منتظر تو بوده."
+                )
+            elif micro_count >= 5:
+                desc_parts.append(
+                    f"✨ {micro_count} جرقه از جمله «{sample_str}» نشان می‌دهد "
+                    f"{major_name} می‌تواند برایت لذت‌بخش باشد."
+                )
+            else:
+                desc_parts.append(
+                    f"🔹 {micro_count} جرقهٔ کوچک اما معنادار (مانند {sample_str}) "
+                    f"در {major_name} پیدا کردی."
+                )
+        else:
+            desc_parts.append(f"هنوز جرقه‌های مشترک زیادی با {major_name} پیدا نکردی، ")
+
+        # سبک فکری
+        if s_score >= 0.8:
+            desc_parts.append(
+                f"سبک فکری‌ات (هم‌خوانی {int(s_score*100)}٪) نشان می‌دهد "
+                f"این رشته با روش طبیعی حل مسئله‌ات هماهنگی فوق‌العاده‌ای دارد."
+            )
+        elif s_score >= 0.6:
+            desc_parts.append(
+                f"سبک فکری‌ات ({int(s_score*100)}٪ تطابق) می‌تواند در این رشته نیز به خوبی عمل کند."
+            )
+        elif s_score >= 0.4:
+            desc_parts.append(
+                "اگرچه سبک فکری‌ات با فضای رایج این رشته تفاوت‌هایی دارد، "
+                "اما اسب سیاه درون تو می‌تواند از این تضاد، خلاقیتی نو خلق کند."
+            )
+        else:
+            desc_parts.append(
+                "سبک فکری‌ات با این رشته هم‌خوانی پایینی دارد، اما مسیر اسب سیاه همیشه غیرمنتظره است."
+            )
+
+        # ارزش‌ها
+        if v_score >= 0.8:
+            desc_parts.append(
+                "ارزش‌های بنیادین‌ات با روح این حرفه هم‌جهت است و به کارت معنای عمیقی می‌بخشد."
+            )
+        elif v_score >= 0.6:
+            desc_parts.append("ارزش‌هایت با این رشته هم‌پوشانی خوبی دارد.")
+        elif v_score >= 0.4:
+            desc_parts.append(
+                "ممکن است برخی ارزش‌هایت در این رشته کمتر دیده شوند، "
+                "اما این تضاد می‌تواند به رشد شخصی‌ات کمک کند."
+            )
+        else:
+            desc_parts.append(
+                "ارزش‌های بنیادین‌ات با این رشته فاصله دارند، "
+                "اما گاهی همین فاصله، جرقهٔ نوآوری است."
+            )
+
+        # پروفایل کاربر
+        desc_parts.append(f"دربارهٔ تو: {user_profile}")
+
+        return " ".join(desc_parts)
+
+    # ============================================================
     # سطح تناسب (ورودی: درصد)
     # ============================================================
     @staticmethod
     def _get_fit_level(score: float) -> str:
-        """
-        تشخیص سطح همخوانی.
-
-        Args:
-            score: نمره نهایی به درصد (0 تا 100)
-        """
         if score >= 80:
             return "همخوانی بسیار بالا"
         elif score >= 60:
@@ -221,7 +408,7 @@ class DarkHorseEngine:
             if len(ans) == 1 and 'A' <= ans <= 'E':
                 strategy_answers.append(ord(ans) - ord('A'))
             else:
-                strategy_answers.append(-1)
+                strategy_answers.append(-1)  # پاسخ نامعتبر
 
         # --- تبدیل V ---
         value_choices: List[str] = []
@@ -229,6 +416,9 @@ class DarkHorseEngine:
             key = f"conj_{i}"
             ans = (conjoint_choices or {}).get(key, "").strip().upper()
             value_choices.append(f"Q{i}{ans}" if ans in ('A', 'B') else "")
+
+        # --- ساخت پروفایل متنی کاربر (فقط یک بار) ---
+        user_profile_text = self._build_user_profile(strategy_answers, value_choices)
 
         discovered: List[Dict] = []
 
@@ -252,7 +442,14 @@ class DarkHorseEngine:
                     m_ev, s_score, s_high, v_score, v_high
                 )
 
-                # ✅ امن‌سازی major_id
+                # تولید توضیح شخصی‌سازی‌شده
+                personalized = self._generate_major_description(
+                    major_data.get("name", ""),
+                    m_ev, s_score, v_score,
+                    user_profile_text
+                )
+
+                # امن‌سازی major_id
                 try:
                     safe_id = int(major_id)
                 except (ValueError, TypeError):
@@ -265,7 +462,6 @@ class DarkHorseEngine:
                     "individuality_fit": {
                         "score": final_score,
                         "level": self._get_fit_level(final_score),
-                        # صرفاً نمایشی - در محاسبات نقشی ندارد
                         "prestige_level": major_data.get("prestige_level", 2),
                         "raw_components": {
                             "m_score": round(m_score * 100, 1),
@@ -273,6 +469,7 @@ class DarkHorseEngine:
                             "v_score": round(v_score * 100, 1),
                         },
                         "evidence": evidence,
+                        "personalized_description": personalized,
                     },
                 })
             except Exception as e:
@@ -302,7 +499,7 @@ class DarkHorseEngine:
                 "scoring": "Total = 0.60×M + 0.20×S + 0.20×V (سند اجرایی)",
                 "filter": "نمایش رشته‌ها با Total ≥ 30%",
                 "policy_decision": "تصمیم نهایی با داوطلب است",
-                "version": "12.2 Final (All Bugfixes)",
+                "version": "13.0 (Personalized Descriptions)",
             },
             "next_step": (
                 "برای مشاهده شانس قبولی دانشگاه‌ها، "
