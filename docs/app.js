@@ -811,6 +811,11 @@ function displayResults(data) {
   }
 
   // ==================== نظرسنجی ۱۰ سوالی (بدون تغییر) ====================
+ // دکمهٔ هدایت تحصیلی
+html += `
+  <button class="btn btn-primary" style="width:100%;margin:20px 0;" onclick="loadBranchResults()">
+    🏫 حالا ببین کدام شاخهٔ دبیرستان با روح تو هماهنگ‌تر است؟
+  </button>`; 
   html += `
     <div id="feedbackSection" style="background:#1a1a2e;border:1px solid #d4af37;border-radius:12px;padding:15px;margin:30px 0 15px 0;text-align:right;">
       <p style="color:#f0c040;font-weight:bold;margin-bottom:10px;">💬 نظرت دربارهٔ اسب سیاه چیه؟</p>
@@ -1018,5 +1023,63 @@ async function init() {
     loadSession();
   }
   render();
+}
+// ==================== BRANCH DISCOVERY (هدایت تحصیلی) ====================
+async function loadBranchResults() {
+  // مطمئن شو Payload آماده است
+  const payload = buildPayload();
+  
+  // نمایش حالت بارگذاری
+  app.innerHTML = `<h2>🏫 در حال تحلیل شاخه‌های دبیرستان...</h2><div class="progress-bar"><div class="progress-fill" style="width:100%"></div></div>`;
+
+  try {
+    const res = await fetchWithRetry(API_BASE + '/api/darkhorse/branch-discovery', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+
+    // تطبیق کلیدها برای استفادهٔ دوباره از displayResults
+    const rawBranches = data.branch_discovery_result?.branches || [];
+    const adaptedRecommendations = rawBranches.map(b => ({
+      major_name_fa: b.branch_name_fa,
+      major_id: b.branch_id,
+      fit_score: b.fit_score,
+      fit_level: b.fit_level,
+      evidence: b.evidence,
+      individuality_fit: {
+        score: b.fit_score,
+        level: b.fit_level,
+        evidence: b.evidence,
+        personalized_description: b.personalized_description,
+        raw_components: b.raw_components
+      }
+    }));
+
+    // ساخت یک آبجکت مشابه خروجی دانشگاه
+    const fakeData = {
+      discovered_majors: adaptedRecommendations,
+      summary: data.branch_discovery_result?.summary || {}
+    };
+
+    // فراخوانی همان تابع نمایش نتایج (بدون نیاز به تغییر)
+    displayResults(fakeData);
+
+    // اضافه کردن دکمهٔ بازگشت به نتایج دانشگاه
+    const backBtn = document.createElement('button');
+    backBtn.className = 'btn';
+    backBtn.style.cssText = 'width:100%;margin-top:20px;';
+    backBtn.textContent = '🔙 بازگشت به نتایج رشته‌های دانشگاهی';
+    backBtn.onclick = () => {
+      // ارسال دوباره درخواست دانشگاه (می‌توان state را نگه داشت ولی ساده‌ترین راه فراخوانی مجدد API است)
+      submitResults();
+    };
+    document.getElementById('app').appendChild(backBtn);
+
+  } catch(e) {
+    console.error(e);
+    app.innerHTML = `<h2>❌ خطا</h2><p>دریافت نتایج هدایت تحصیلی ممکن نشد.</p><button class="btn" onclick="submitResults()">🔙 بازگشت به نتایج دانشگاه</button>`;
+  }
 }
 init();
