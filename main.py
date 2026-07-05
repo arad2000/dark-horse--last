@@ -1,7 +1,7 @@
 """
-Dark Horse API v10.5 – Integrated with DarkHorseEngine v14.3
-+ Branch Discovery for 9th Grade (هدایت تحصیلی)
-+ Uses school_branches.json
+Dark Horse API v10.6 – Final Branch Discovery + University
+- Branch engine loads school_branches.json with m_score_denom_limit
+- Added /api/check-branch-file for debugging
 """
 
 import json
@@ -57,7 +57,6 @@ except ImportError as e:
 # Data loaders
 # ---------------------------------------------------------------------------
 def _load_json_file(filename: str) -> Optional[Dict | List]:
-    """Load a JSON file from data/ or project root."""
     base = Path(__file__).parent
     for candidate in (base / "data" / filename, base / filename):
         if candidate.exists():
@@ -104,7 +103,7 @@ def _load_universities() -> Dict:
 # ---------------------------------------------------------------------------
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger.info("🚀 Starting Dark Horse API v10.5 ...")
+    logger.info("🚀 Starting Dark Horse API v10.6 ...")
 
     # --- Dark Horse Engine (رشته‌های دانشگاهی) ---
     if DarkHorseEngine is not None:
@@ -150,7 +149,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Dark Horse API",
     description="موتور کشف فردیت و انتخاب رشته هوشمند",
-    version="10.5",
+    version="10.6",
     docs_url="/docs",
     redoc_url="/redoc",
     lifespan=lifespan,
@@ -248,7 +247,7 @@ def _get_branch_engine(request: Request):
 # ---------------------------------------------------------------------------
 @app.get("/")
 async def root():
-    return {"name": "Dark Horse API", "version": "10.5", "status": "online"}
+    return {"name": "Dark Horse API", "version": "10.6", "status": "online"}
 
 
 @app.get("/api/health")
@@ -278,6 +277,17 @@ async def health_check(request: Request):
         },
         "engine_version": engine_version,
     }
+
+
+# ---------------------------------------------------------------------------
+# Temporary endpoint to check if school_branches.json exists on server
+# ---------------------------------------------------------------------------
+@app.get("/api/check-branch-file")
+async def check_branch_file():
+    path = os.path.join("data", "school_branches.json")
+    exists = os.path.exists(path)
+    files = os.listdir("data") if os.path.exists("data") else []
+    return {"exists": exists, "path": path, "files_in_data": files}
 
 
 # =========================================================================
@@ -344,7 +354,6 @@ async def discover_darkhorse(request: DarkHorseDiscoverRequest, req: Request):
 # =========================================================================
 @app.post("/api/darkhorse/branch-discovery")
 async def branch_discovery(request: DarkHorseDiscoverRequest, req: Request):
-    """تحلیل هدایت تحصیلی برای شاخه‌های دبیرستان"""
     engine = _get_branch_engine(req)
     try:
         sjt = request.sjt_answers if request.sjt_answers is not None else {}
