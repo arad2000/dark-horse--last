@@ -1,10 +1,8 @@
-// ==================== Dark Horse App v26.1 — Final Bug‑Fix ====================
-// تغییرات نسبت به v26.0:
-//   • رفع باگ init (اجباری شدن manifesto در اولین ورود)
-//   • رفع باگ loadSwipeCards (تحمل خطای NARROW_PATHS ناقص)
-//   • بهبود پایداری findNarrowPath
-//   • بازنویسی کامل renderManifesto و renderGuide مطابق آخرین متن تأییدشده
-//   • حفظ تمام قابلیت‌ها (Resume, Feedback, Retry, …)
+// ==================== Dark Horse App v26.2 — Personalized Results ====================
+// تغییرات نسبت به v26.1:
+//   • نمایش personalized_description از API در نتایج
+//   • سازگاری با ساختار پاسخ جدید (discovered_majors)
+//   • بهبود fallback برای evidence
 
 const API_BASE = 'https://dark-horse-last.onrender.com';
 const DATA_BASE = './data/';
@@ -642,7 +640,9 @@ async function submitResults() {
     const res = await fetchWithRetry(API_BASE + '/api/darkhorse/discover', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
     });
-    const data = await res.json(); clearSession(); displayResults(data, payload.sjt_answers, payload.conjoint_choices);
+    const data = await res.json();
+    clearSession();
+    displayResults(data);
   } catch(e) {
     console.error(e);
     app.innerHTML = `<h2>❌ خطا در دریافت نتایج</h2><div class="card"><p>نتوانستیم با سرور ارتباط برقرار کنیم.</p><button class="btn btn-primary" style="width:100%;margin-top:15px;" onclick="retrySubmit()">🔄 تلاش دوباره</button><button class="btn" style="width:100%;margin-top:8px;" onclick="goBack()">🔙 بازگشت</button></div>`;
@@ -672,14 +672,16 @@ async function retrySubmit() {
     const res = await fetchWithRetry(API_BASE + '/api/darkhorse/discover', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(state.lastPayload)
     });
-    const data = await res.json(); clearSession(); displayResults(data, state.lastPayload.sjt_answers, state.lastPayload.conjoint_choices);
+    const data = await res.json();
+    clearSession();
+    displayResults(data);
   } catch(e) {
     console.error(e);
     app.innerHTML = `<h2>❌ خطا</h2><div class="card"><p>هنوز نمی‌توانیم متصل شویم.</p><button class="btn btn-primary" style="width:100%;margin-top:15px;" onclick="retrySubmit()">🔄 تلاش دوباره</button><button class="btn" style="width:100%;margin-top:8px;" onclick="goBack()">🔙 بازگشت</button></div>`;
   }
 }
 
-// ==================== تحلیل سبک شخصی ====================
+// ==================== تحلیل سبک شخصی (fallback سمت کاربر) ====================
 function analyzeStrategyStyle(answers) {
   const counts = [0,0,0,0,0];
   answers.forEach(a => { if (a !== undefined) counts[a]++; });
@@ -719,11 +721,18 @@ function analyzeValueStyle(answers) {
   return { values: selected.slice(0, 5), summary: unique.slice(0, 4).join('، '), description: 'ارزش‌های بنیادین شما نشان می‌دهد که چه چیزی به کارتان معنا می‌بخشد.' };
 }
 
-// ==================== DISPLAY RESULTS ====================
-function displayResults(data, sjt, conj) {
-  const recs = data.discovery_result?.recommendations || [];
-  const matched = recs.filter(r => (r.fit_score || 0) >= 30).sort((a, b) => b.fit_score - a.fit_score);
-  const bestMajor = matched.length > 0 ? matched[0] : null;
+// ==================== DISPLAY RESULTS (با پشتیبانی از personalized_description) ====================
+function displayResults(data) {
+  // سازگاری با ساختار جدید (discovered_majors) و قدیم (discovery_result.recommendations)
+  const recs = data.discovered_majors || (data.discovery_result?.recommendations) || [];
+  const matched = recs.filter(r => {
+    const score = r.individuality_fit?.score || r.fit_score || 0;
+    return score >= 30;
+  }).sort((a, b) => {
+    const scoreA = a.individuality_fit?.score || a.fit_score || 0;
+    const scoreB = b.individuality_fit?.score || b.fit_score || 0;
+    return scoreB - scoreA;
+  });
 
   const strategyStyle = state.strategyAnswers.length >= 15 ? analyzeStrategyStyle(state.strategyAnswers) : null;
   const valueStyle = state.valueAnswers.length >= 5 ? analyzeValueStyle(state.valueAnswers) : null;
@@ -745,19 +754,26 @@ function displayResults(data, sjt, conj) {
   if (matched.length === 0) {
     html += `<p style="color:#f0c040;">با همین خرده‌انگیزه‌ها، هیچ رشته‌ای به آستانهٔ ۳۰٪ نرسیده است.</p>`;
   } else {
-    const avgMicroCount = matched.reduce((sum, r) => {
-      const ev = r.evidence || {};
-      const mm = ev.micro_motives_matched || [];
-      return sum + mm.length;
-    }, 0) / matched.length;
-
     matched.forEach(r => {
-      let alignmentBadge = '';
-      if (r.evidence && typeof r.evidence === 'object') {
-        const microMatch = r.evidence.micro_motives_matched || [];
-        const warnings = r.evidence.warnings || [];
-        const hasWarnings = warnings.length > 0;
+      const fit = r.individuality_fit || {};
+      const score = fit.score || r.fit_score || 0;
+      const evidence = fit.evidence || r.evidence;
 
+      let alignmentBadge = '';
+
+      // ۱. اولویت: نمایش توضیح شخصی‌سازی‌شده از موتور (v13)
+      const personalized = fit.personalized_description;
+      if (personalized && personalized.trim() !== '') {
+        alignmentBadge = `
+          <div style="background:#1a1a2e;border:1px solid #d4af37;border-radius:8px;padding:10px 12px;margin-top:10px;text-align:right;font-size:0.85rem;line-height:1.9;">
+            <p style="margin:0;color:#f0c040;">💬 ${escapeHtml(personalized)}</p>
+          </div>`;
+      }
+      // ۲. حالت دوم: توضیح بر اساس evidence (نسخه‌های قبلی)
+      else if (evidence && typeof evidence === 'object') {
+        const microMatch = evidence.micro_motives_matched || [];
+        const warnings = evidence.warnings || [];
+        const hasWarnings = warnings.length > 0;
         let scenarioText = '';
         let borderColor = '#b0a080';
 
@@ -766,7 +782,16 @@ function displayResults(data, sjt, conj) {
           scenarioText = warnings.join(' ');
         } else {
           borderColor = '#f0c040';
-          scenarioText = '🎯 هر سه لایهٔ فردیتت با این رشته هم‌راستاست.';
+          const matchCount = microMatch.length;
+          if (matchCount >= 10) {
+            scenarioText = `🎯 هم‌راستایی بسیار بالا: ${matchCount} جرقهٔ انرژی مشترک.`;
+          } else if (matchCount >= 5) {
+            scenarioText = `✨ هم‌راستایی خوب: ${matchCount} جرقهٔ مشترک.`;
+          } else if (matchCount > 0) {
+            scenarioText = `🔹 ${matchCount} جرقهٔ مشترک.`;
+          } else {
+            scenarioText = '🎯 این رشته بر اساس تحلیل سه‌لایه‌ای با فردیت تو هم‌خوانی دارد.';
+          }
         }
 
         alignmentBadge = `
@@ -775,26 +800,17 @@ function displayResults(data, sjt, conj) {
           </div>`;
       }
 
-      let evidenceHtml = '';
-      if (r.evidence && typeof r.evidence === 'object') {
-        const parts = [];
-        const microMatch = r.evidence.micro_motives_matched || [];
-        if (microMatch.length) parts.push(`🧩 خرده‌انگیزه‌های هم‌راستا: ${microMatch.slice(0,3).map(m=>escapeHtml(m.description)||escapeHtml(m.code)).join('، ')}`);
-        if (parts.length) evidenceHtml = parts.join('<br>');
-      }
-
       html += `
         <div class="card" style="text-align:right;">
-          <h3 style="color:#f0c040;">${escapeHtml(r.major_name_fa) || 'رشتهٔ پیشنهادی'}</h3>
-          <div class="progress-bar"><div class="progress-fill" style="width:${r.fit_score}%"></div></div>
-          <p style="margin-top:8px;">🔹 <strong>${r.fit_score}%</strong> تطابق</p>
-          ${evidenceHtml ? `<p style="font-size:0.85rem;color:#b0a080;line-height:1.8;">📋 ${evidenceHtml}</p>` : ''}
+          <h3 style="color:#f0c040;">${escapeHtml(r.major_name_fa || 'رشتهٔ پیشنهادی')}</h3>
+          <div class="progress-bar"><div class="progress-fill" style="width:${score}%"></div></div>
+          <p style="margin-top:8px;">🔹 <strong>${score}%</strong> تطابق</p>
           ${alignmentBadge}
         </div>`;
     });
   }
 
-  // ==================== نظرسنجی ۱۰ سوالی ====================
+  // ==================== نظرسنجی ۱۰ سوالی (بدون تغییر) ====================
   html += `
     <div id="feedbackSection" style="background:#1a1a2e;border:1px solid #d4af37;border-radius:12px;padding:15px;margin:30px 0 15px 0;text-align:right;">
       <p style="color:#f0c040;font-weight:bold;margin-bottom:10px;">💬 نظرت دربارهٔ اسب سیاه چیه؟</p>
@@ -865,7 +881,7 @@ function displayResults(data, sjt, conj) {
   app.innerHTML = html;
 }
 
-// ==================== مدیریت بازخورد ====================
+// ==================== مدیریت بازخورد (بدون تغییر) ====================
 const feedback = {};
 
 function setFeedback(question, value) {
@@ -924,7 +940,7 @@ async function submitFeedback() {
   }
 }
 
-// ==================== نمایش بازخوردها ====================
+// ==================== نمایش بازخوردها (بدون تغییر) ====================
 async function showAllFeedback() {
   try {
     const res = await fetch(API_BASE + '/api/feedback/all');
