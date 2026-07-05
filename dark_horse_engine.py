@@ -3,6 +3,7 @@ Dark Horse Engine v14.3 (Final) – Full Personalization with Micro-Alignment De
 ============================================================================
 - سناریوهای سه‌گانه (M+S+V)
 - درج مثال‌های واقعی از ابعاد همسو/ناهمسو (راهبردها و ارزش‌ها)
+- پشتیبانی از m_score_denom_limit برای هدایت تحصیلی
 - حفظ next_step
 """
 
@@ -85,9 +86,9 @@ class DarkHorseEngine:
 
         try:
             self.majors_db = self._load_json(majors_path, key_field="id")
-            logger.info(f"✅ {len(self.majors_db)} رشته بارگذاری شد.")
+            logger.info(f"✅ {len(self.majors_db)} رشته/شاخه بارگذاری شد.")
         except Exception as e:
-            logger.error(f"خطا در بارگذاری رشته‌ها: {e}")
+            logger.error(f"خطا در بارگذاری رشته‌ها/شاخه‌ها: {e}")
             self.majors_db = {}
 
     def _load_json(self, path: str, key_field: Optional[str] = None,
@@ -128,6 +129,7 @@ class DarkHorseEngine:
         if not matched:
             return 0.0, []
 
+        # ✅ اصلاح m_score_denom_limit برای هدایت تحصیلی
         denom_limit = major_data.get("m_score_denom_limit", len(major_set))
         denom = min(len(major_set), denom_limit)
         score = len(matched) / denom
@@ -202,11 +204,11 @@ class DarkHorseEngine:
         if s_score < 0.4:
             warnings.append(
                 "راهبردهای شخصی شما (سبک یادگیری و حل مسئله) با الگوی رایج "
-                "در این رشته تفاوت‌هایی دارد."
+                "در این رشته/شاخه تفاوت‌هایی دارد."
             )
         if v_score < 0.4:
             warnings.append(
-                "برخی ارزش‌های بنیادین شما با اولویت‌های این رشته فاصله دارد."
+                "برخی ارزش‌های بنیادین شما با اولویت‌های این رشته/شاخه فاصله دارد."
             )
         if warnings:
             evidence["warnings"] = warnings
@@ -223,11 +225,10 @@ class DarkHorseEngine:
         else:
             return "همخوانی پایین"
 
-    # ======================= استخراج نمونه‌های ناهمسویی/همسویی =======================
+    # ======================= استخراج نمونه‌های ناهمسویی =======================
     def _extract_s_misaligned_traits(
         self, strategy_answers: List[int], strategy_weights: List[List[float]]
     ) -> List[str]:
-        """برگرداندن نام چند بُعد که وزن انتخاب کاربر در آن‌ها کمتر از 0.3 است"""
         traits = []
         for i, row in enumerate(strategy_weights):
             if i >= len(strategy_answers):
@@ -239,13 +240,11 @@ class DarkHorseEngine:
                 q_num = i + 1
                 trait = self.trait_map.get(q_num, [""])[ans] if q_num in self.trait_map else "نامشخص"
                 traits.append(trait)
-        # برگرداندن حداکثر ۳ مورد
         return list(dict.fromkeys(traits))[:3]
 
     def _extract_v_misaligned_poles(
         self, value_choices: List[str], value_weights: Dict[str, float]
     ) -> List[str]:
-        """برگرداندن ارزش‌هایی که گزینهٔ انتخابی کاربر وزن پایینی دارد و گزینهٔ مقابل وزن بالایی"""
         poles = []
         for v in value_choices:
             if not v or not v.strip():
@@ -335,7 +334,7 @@ class DarkHorseEngine:
                 "می‌توانید این مسیر را به عنوان یک گزینه در نظر بگیرید."
             )
 
-        # --- افزودن نمونه‌های واقعی از ناهمسویی‌ها (در صورت وجود) ---
+        # --- افزودن نمونه‌های واقعی از ناهمسویی‌ها ---
         if not s_aligned:
             mis_traits = self._extract_s_misaligned_traits(strategy_answers, strategy_weights)
             if mis_traits:
@@ -430,7 +429,7 @@ class DarkHorseEngine:
                     },
                 })
             except Exception as e:
-                logger.error(f"خطا در تحلیل رشته {major_id}: {e}")
+                logger.error(f"خطا در تحلیل رشته/شاخه {major_id}: {e}")
                 continue
 
         discovered.sort(key=lambda x: x["individuality_fit"]["score"], reverse=True)
